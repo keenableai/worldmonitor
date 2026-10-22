@@ -96,7 +96,7 @@ describe('MCP Presets — static validation', () => {
 
   it('expected free presets are present', () => {
     const names = new Set(presets.map(p => p.name));
-    for (const expected of ['Parallel Search', 'Robtex', 'Pyth Price Feeds', 'Open-Meteo']) {
+    for (const expected of ['Parallel Search', 'Keenable Search', 'Robtex', 'Pyth Price Feeds', 'Open-Meteo']) {
       assert.ok(names.has(expected), `Expected preset "${expected}" not found`);
     }
   });
@@ -125,6 +125,14 @@ describe('MCP Presets — static validation', () => {
     assert.ok(parallel, 'Parallel Search preset not found');
     assert.equal(parallel.serverUrl, 'https://search.parallel.ai/mcp');
     assert.equal(parallel.defaultTool, 'web_search');
+  });
+
+  it('Keenable Search uses the keyless hosted MCP endpoint and search_web_pages tool', () => {
+    const keenable = presets.find(p => p.name === 'Keenable Search');
+    assert.ok(keenable, 'Keenable Search preset not found');
+    assert.equal(keenable.serverUrl, 'https://api.keenable.ai/mcp?keenable_title=worldmonitor');
+    assert.equal(keenable.defaultTool, 'search_web_pages');
+    assert.equal(keenable.authNote, undefined);
   });
 
   it('Datadog serverUrl includes /api/unstable/mcp-server/mcp', () => {
