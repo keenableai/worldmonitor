@@ -16,13 +16,34 @@ import { after, describe, it } from 'node:test';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
 
 import { extractPresets, isTemplatePreset, probePreset } from '../scripts/lib/mcp-preset-liveness.mjs';
 
-const presets = extractPresets(readFileSync(resolve(root, 'src/services/mcp-store.ts'), 'utf8'));
+const storeSource = readFileSync(resolve(root, 'src/services/mcp-store.ts'), 'utf8');
+const presets = extractPresets(storeSource);
+
+// extractPresets() keeps only the string fields the liveness probe needs, so
+// read a whole entry (defaultArgs, apiKeyHeader) from the catalog AST instead.
+function readPresetEntry(name) {
+  const toValue = node => {
+    if (ts.isStringLiteralLike(node)) return node.text;
+    if (ts.isNumericLiteral(node)) return Number(node.text);
+    if (ts.isObjectLiteralExpression(node) && node.properties.every(ts.isPropertyAssignment)) {
+      return Object.fromEntries(node.properties.map(p => [p.name.text, toValue(p.initializer)]));
+    }
+    throw new Error(`Unsupported value in MCP preset "${name}": ${node.getText()}`);
+  };
+  const isEntry = node => ts.isObjectLiteralExpression(node)
+    && node.properties.some(p => p.name?.text === 'name' && p.initializer?.text === name);
+  const find = node => (isEntry(node) ? node : ts.forEachChild(node, find));
+  const entry = find(ts.createSourceFile('mcp-store.ts', storeSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS));
+  assert.ok(entry, `${name} preset not found in mcp-store.ts`);
+  return toValue(entry);
+}
 
 // Known-dead or moved URLs that must NOT appear in presets
 const BANNED_URLS = [
@@ -133,6 +154,9 @@ describe('MCP Presets — static validation', () => {
     assert.equal(keenable.serverUrl, 'https://api.keenable.ai/mcp?keenable_title=worldmonitor');
     assert.equal(keenable.defaultTool, 'search_web_pages');
     assert.equal(keenable.authNote, undefined);
+    const entry = readPresetEntry('Keenable Search');
+    assert.deepEqual(entry.defaultArgs, { query: 'latest major geopolitical developments', max_results: 5 });
+    assert.equal(entry.apiKeyHeader, undefined);
   });
 
   it('Datadog serverUrl includes /api/unstable/mcp-server/mcp', () => {
